@@ -1,0 +1,68 @@
+# Namespace, ServiceAccount et application qui lit le secret de deux façons :
+# variable d'environnement (lue au démarrage) et fichier monté (mis à jour par le kubelet).
+# Le Pod reste en attente (CreateContainerConfigError) tant que le Secret api-credentials n'existe pas.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tp18
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-sa
+  namespace: tp18
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-reader
+  namespace: tp18
+  labels: { app: secret-reader }
+  # Partie 4 (rotation automatique) : à ajouter APRÈS avoir observé la rotation "manuelle"
+  #   kubectl -n tp18 annotate deploy/secret-reader reloader.stakater.com/auto="true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: secret-reader }
+  template:
+    metadata:
+      labels: { app: secret-reader }
+    spec:
+      serviceAccountName: app-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: reader
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                echo "$(date +%T) env=${API_KEY}  fichier=$(cat /etc/secret/api-key)"
+                sleep 10
+              done
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: api-credentials
+                  key: api-key
+          volumeMounts:
+            - name: secret
+              mountPath: /etc/secret
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+      volumes:
+        - name: secret
+          secret:
+            secretName: api-credentials

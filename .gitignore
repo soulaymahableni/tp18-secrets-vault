@@ -1,0 +1,6 @@
+*-BACKUP.yaml
+*sealed-secrets-key*
+*.key
+.env
+kubeseal
+kubeseal.tgz
